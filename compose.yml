@@ -1,0 +1,63 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    ports:
+      - "80:80"
+    volumes:
+      - ./app:/app
+    depends_on:
+      - app-php-fpm
+    networks:
+      - app-network
+
+  app-php-fpm:
+    build:
+      context: .
+      dockerfile: docker/php-fpm/Dockerfile
+    volumes:
+      - ./app:/app
+    depends_on:
+      - app-worker
+      - app-redis
+    networks:
+      - app-network
+    environment:
+      APP_ENV: dev
+
+  app-worker:
+    build:
+      context: .
+      dockerfile: docker/supervisor/Dockerfile
+    volumes:
+      - ./app:/app
+      - ./docker/supervisor/conf/supervisord.conf:/etc/supervisor/supervisord.conf
+      - ./docker/supervisor/conf/event-worker.conf:/etc/supervisor/conf.d/app.conf
+    networks:
+      - app-network
+    environment:
+      APP_ENV: dev
+    command: ["supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+
+  app-redis:
+    build:
+      context: .
+      dockerfile: docker/redis/Dockerfile
+    ports:
+      - "6379:6379"
+    expose:
+      - "6379"
+    volumes:
+      - ./app:/app
+      - redis_data:/data
+    restart: always
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  redis_data:
