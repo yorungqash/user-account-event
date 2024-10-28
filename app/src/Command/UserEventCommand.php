@@ -7,7 +7,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use App\Service\UserEventServiceInterface;
-use App\ValueObject\FiberList;
+use App\Event\UserEvent;
 use App\ValueObject\UserEventError;
 use Throwable;
 
@@ -19,12 +19,6 @@ use Throwable;
 final class UserEventCommand extends Command
 {
     private bool $forceFinish;
-
-    private const int PROCESS_COUNT = 5;
-
-    private const int DEFAULT_SLEEP_CHECK_IN_MICROSECONDS = 75000;
-
-    private const string PROCESS_USER_EVENT_COMMAND = 'php /app/bin/console app:process-user-event';
 
     public function __construct(
         private readonly UserEventServiceInterface $userEventService,
@@ -42,38 +36,22 @@ final class UserEventCommand extends Command
         pcntl_signal(SIGINT, [$this, 'signalHandler']);
 
         do {
-            $listLength = $this->userEventService->getListLength();
+            $userEventList = $this->userEventService->getRandomList();
 
-            if ($listLength instanceof UserEventError) {
-                return Command::FAILURE;
-            }
-
-            if ($listLength === 0) {
-                usleep(250000);
+            if ($userEventList instanceof UserEventError) {
+                //no queues
+                usleep(50000);
                 continue;
             }
 
-            $processCount = $listLength < self::PROCESS_COUNT ? 1 : self::PROCESS_COUNT;
+            $userEvent = $this->processEvent($userEventList);
 
-            $closures = [];
-            $closureParameters = [];
-
-            for ($count = 1; $count <= $processCount; $count++) {
-                $closures[] = FiberList::getProcessClosure(self::DEFAULT_SLEEP_CHECK_IN_MICROSECONDS);
-                $closureParameters[] = [self::PROCESS_USER_EVENT_COMMAND];
+            if ($userEvent instanceof UserEventError) {
+                $this->userEventService->deleteList($userEventList);
             }
 
-            $fibers = new FiberList($closures, $closureParameters);
-
-            $fiberResults = $fibers->run();
-
-            foreach ($fiberResults as $fiberResult) {
-                if ($fiberResult !== 0) {
-                    break;
-                }
-            }
-
-            usleep(150000);
+            echo var_export($userEvent, true) . PHP_EOL;
+            usleep(50000);
         } while (!$this->forceFinish);
 
         return Command::FAILURE;
@@ -87,5 +65,16 @@ final class UserEventCommand extends Command
             SIGTERM, SIGINT => $this->forceFinish = true,
             default => null
         };
+    }
+
+    private function processEvent(string $queueName): UserEvent|UserEventError
+    {
+        $userEvent = $this->userEventService->remove($queueName);
+
+        sleep(1);
+
+        $this->userEventService->deleteList($queueName . 'blocked');
+
+        return $userEvent;
     }
 }

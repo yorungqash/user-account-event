@@ -22,12 +22,18 @@ interface UserEventServiceInterface
     public function add(array $userEvents): int|UserEventError;
 
     /**
-     * @return int|UserEventError
-     */
-    public function getListLength(): int|UserEventError;
-
-    /**
+     * @param string $queueName
      * @return UserEvent|UserEventError
      */
-    public function remove(): UserEvent|UserEventError;
+    public function remove(string $queueName): UserEvent|UserEventError;
+
+    /**
+     * @return string|UserEventError
+     */
+    public function getRandomList(): string|UserEventError;
+    /**
+     * @param string $queueName
+     * @return bool|UserEventError
+     */
+    public function deleteList(string $queueName): bool|UserEventError;
 }

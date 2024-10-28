@@ -46,36 +46,35 @@ final readonly class UserEventService implements UserEventServiceInterface, User
      */
     public function add(array $userEvents): int|UserEventError
     {
+        $userEventClosure = function (array $userEvents) {
+            foreach ($userEvents as $userEvent) {
+                yield $userEvent;
+            }
+        };
+
+        $count = 0;
+
         try {
-            $countUserEvents = $this->listRepository->enqueueBatch(self::QUEUE_NAME, $userEvents);
+            /** @var UserEvent $userEvent */
+            foreach ($userEventClosure($userEvents) as $userEvent) {
+                $this->listRepository->queue(self::QUEUE_NAME . '_' . $userEvent->userId, $userEvent);
+
+                $count += 1;
+            }
         } catch (RedisException $e) {
             return new UserEventError($e->getMessage());
         }
 
-        return $countUserEvents;
+        return $count;
     }
 
     /**
      * {@inheritDoc}
      */
-    public function getListLength(): int|UserEventError
+    public function remove(string $queueName): UserEvent|UserEventError
     {
         try {
-            $listLength = $this->listRepository->length(self::QUEUE_NAME);
-        } catch (RedisException $e) {
-            return new UserEventError($e->getMessage());
-        }
-
-        return $listLength;
-    }
-
-    /**
-     * {@inheritDoc}
-     */
-    public function remove(): UserEvent|UserEventError
-    {
-        try {
-            $jsonUserEvent = $this->listRepository->dequeue(self::QUEUE_NAME);
+            $jsonUserEvent = $this->listRepository->dequeue($queueName);
         } catch (RedisException $e) {
             return new UserEventError($e->getMessage());
         }
@@ -84,5 +83,33 @@ final readonly class UserEventService implements UserEventServiceInterface, User
         $userEvent = $this->jsonService->buildObject($jsonUserEvent, UserEvent::class);
 
         return $userEvent;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function getRandomList(): string|UserEventError
+    {
+        try {
+            $userEventList = $this->listRepository->getQueueByPrefix(self::QUEUE_NAME . '_');
+        } catch (RedisException $e) {
+            return new UserEventError($e->getMessage());
+        }
+
+        return $userEventList;
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public function deleteList(string $queueName): bool|UserEventError
+    {
+        try {
+            $isDeleted = $this->listRepository->delete($queueName);
+        } catch (RedisException $e) {
+            return new UserEventError($e->getMessage());
+        }
+
+        return $isDeleted;
     }
 }
